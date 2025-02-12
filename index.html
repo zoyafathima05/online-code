@@ -1,0 +1,132 @@
+backend//
+const express = require("express");
+const cors = require("cors");
+const bodyParser = require("body-parser");
+const { exec } = require("child_process");
+const { Server } = require("socket.io");
+const http = require("http");
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*" } });
+
+app.use(cors());
+app.use(bodyParser.json());
+
+const runCode = (language, code, res) => {
+  let command;
+  switch (language) {
+    case "python":
+      command = `docker run --rm python:3.9 python -c "${code}"`;
+      break;
+    case "javascript":
+      command = `docker run --rm node:14 node -e "${code}"`;
+      break;
+    case "cpp":
+      command = `echo '${code}' > temp.cpp && g++ temp.cpp -o temp && ./temp`;
+      break;
+    default:
+      return res.json({ error: "Unsupported language" });
+  }
+
+  exec(command, (error, stdout, stderr) => {
+    if (error) return res.json({ error: stderr || error.message });
+    res.json({ output: stdout });
+  });
+};
+
+// API to execute code
+app.post("/run", (req, res) => {
+  const { language, code } = req.body;
+  runCode(language
+
+frontend//
+module.exports = {
+  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  theme: { extend: {} },
+  plugins: [],
+};
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+import { useState, useEffect } from "react";
+import CodeMirror from "codemirror";
+import "codemirror/lib/codemirror.css";
+import "codemirror/mode/javascript/javascript";
+import "codemirror/mode/python/python";
+import "codemirror/mode/clike/clike";
+import "codemirror/theme/material.css";
+import { io } from "socket.io-client";
+import axios from "axios";
+
+const SERVER_URL = "http://localhost:5000";
+
+export default function CodeEditor() {
+  const [language, setLanguage] = useState("javascript");
+  const [output, setOutput] = useState("");
+  const [editor, setEditor] = useState(null);
+  const socket = io(SERVER_URL);
+
+  useEffect(() => {
+    const cm = CodeMirror.fromTextArea(document.getElementById("editor"), {
+      mode: "javascript",
+      theme: "material",
+      lineNumbers: true,
+    });
+
+    cm.on("change", () => {
+      const code = cm.getValue();
+      socket.emit("code-change", code);
+    });
+
+    socket.on("update-code", (code) => {
+      if (editor) editor.setValue(code);
+    });
+
+    setEditor(cm);
+    return () => socket.disconnect();
+  }, []);
+
+  const runCode = async () => {
+    const response = await axios.post(`${SERVER_URL}/run`, {
+      language,
+      code: editor.getValue(),
+    });
+    setOutput(response.data.output || response.data.error);
+  };
+
+  return (
+    <div className="container mx-auto p-5">
+      <h1 className="text-2xl font-bold mb-3">💻 Online Code Editor</h1>
+      <select
+        className="mb-3 p-2 border"
+        onChange={(e) => {
+          setLanguage(e.target.value);
+          editor.setOption("mode", e.target.value);
+        }}
+      >
+        <option value="javascript">JavaScript</option>
+        <option value="python">Python</option>
+        <option value="cpp">C++</option>
+      </select>
+      <textarea id="editor" className="w-full h-64"></textarea>
+      <button onClick={runCode} className="mt-3 bg-blue-500 text-white px-4 py-2">
+        Run Code
+      </button>
+      <pre className="bg-gray-200 p-3 mt-3">{output}</pre>
+    </div>
+  );
+}
+
+import CodeEditor from "./CodeEditor";
+
+function App() {
+  return (
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+      <CodeEditor />
+    </div>
+  );
+}
+
+export default App;
